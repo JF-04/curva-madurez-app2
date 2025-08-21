@@ -149,6 +149,7 @@ if not edited_data.empty:
         line=dict(color="red")
     ))
 
+
     fig.update_layout(
         xaxis_title="Madurez (°C·h)",
         yaxis_title="Resistencia a compresión (MPa)",
