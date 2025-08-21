@@ -1,117 +1,159 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.express as px
+import plotly.graph_objects as go
 from io import BytesIO
-from fpdf import FPDF
-from sklearn.linear_model import LinearRegression
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib import colors
 
-# -------------------------------
-# Función para generar el PDF
-# -------------------------------
-def generar_pdf(df: pd.DataFrame, a: float, b: float, r2: float, titulo: str) -> bytes:
-    pdf = FPDF()
-    pdf.add_page()
+# --- Para PDF con Matplotlib ---
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
-    # Encabezado
-    pdf.set_font("Arial", "B", 12)
-    pdf.cell(0, 10, "IoT Provoleta®", ln=True, align="R")
+st.title("Calibración estimada hormigones - IoT Provoleta")
 
-    # Título
-    pdf.set_font("Arial", "B", 14)
-    pdf.cell(0, 10, "Calibración Norma ASTM C1074", ln=True, align="C")
-    pdf.ln(10)
+# Título personalizado para informe/hoja
+custom_title = st.text_input("📌 Título del informe/archivo", "Informe de calibración")
 
-    # Subtítulo personalizado
-    pdf.set_font("Arial", "B", 12)
-    pdf.cell(0, 10, titulo, ln=True, align="C")
-    pdf.ln(10)
+st.markdown("""
+Esta aplicación permite ingresar resultados de ensayos de resistencia a compresión 
+y calcular la relación con la madurez (método de Nurse-Saul).
+""")
 
-    # Resultados de la regresión
-    pdf.set_font("Arial", "", 12)
-    pdf.cell(0, 10, f"Ordenada al origen (a): ", ln=False)
-    pdf.set_font("Arial", "B", 12)
-    pdf.cell(0, 10, f"{a:.3f}", ln=True)
+# ========================
+# TABLA DE DATOS (editable por el usuario)
+# ========================
+st.subheader("Cargar datos experimentales (Madurez y Resistencia)")
+data = pd.DataFrame({
+    "Madurez (°C·h)": [500, 1500, 5000, 15000, 30000],
+    "Resistencia (MPa)": [5.0, 12.0, 20.0, 28.0, 35.0]
+})
+edited_data = st.data_editor(data, num_rows="dynamic")
 
-    pdf.set_font("Arial", "", 12)
-    pdf.cell(0, 10, f"Pendiente (b): ", ln=False)
-    pdf.set_font("Arial", "B", 12)
-    pdf.cell(0, 10, f"{b:.3f}", ln=True)
+# ========================
+# FUNCIÓN PDF
+# ========================
+def generar_pdf(edited_df: pd.DataFrame, a: float, b: float, r2: float) -> bytes:
+    """Genera un PDF con resultados + tabla + gráfico renderizado."""
+    # --- Gráfico Matplotlib ---
+    fig, ax = plt.subplots(figsize=(6.0, 3.8))
+    ax.scatter(edited_df["Madurez (°C·h)"], edited_df["Resistencia (MPa)"], label="Datos experimentales", color="blue")
+    x_fit = np.linspace(float(edited_df["Madurez (°C·h)"].min()), float(edited_df["Madurez (°C·h)"].max()), 200)
+    y_fit = a * np.log10(x_fit) + b
+    ax.plot(x_fit, y_fit, label="Curva estimada", color="red", linewidth=2)
+    ax.set_xlabel("Madurez (°C·h)")
+    ax.set_ylabel("Resistencia a compresión (MPa)")
+    ax.legend(loc="best")
+    img_buf = BytesIO()
+    plt.tight_layout()
+    plt.savefig(img_buf, format="png", dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    img_buf.seek(0)
 
-    pdf.set_font("Arial", "", 12)
-    pdf.cell(0, 10, f"Coeficiente de determinación R²: {r2:.3f}", ln=True)
+    # --- Construir PDF ---
+    pdf_buf = BytesIO()
+    doc = SimpleDocTemplate(pdf_buf, pagesize=A4)
+    styles = getSampleStyleSheet()
+    story = []
 
-    # Exportar tabla
-    pdf.ln(10)
-    pdf.set_font("Arial", "B", 12)
-    pdf.cell(0, 10, "Datos utilizados:", ln=True)
+    # Título del informe (desde la app)
+    story.append(Paragraph(custom_title, styles["Title"]))
+    story.append(Spacer(1, 8))
 
-    pdf.set_font("Arial", "", 10)
-    for _, row in df.iterrows():
-        pdf.cell(0, 8, f"Madurez: {row['Madurez']}  |  Resistencia: {row['Resistencia']}", ln=True)
+    story.append(Paragraph("📌 Resultados de la regresión", styles["Heading2"]))
+    res_tab = Table([
+        ["Pendiente (a)", f"{a:.2f}"],
+        ["Ordenada al origen (b)", f"{b:.2f}"],
+        ["R²", f"{r2:.2f}"],
+    ], hAlign="LEFT")
+    res_tab.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 1), colors.lightgrey),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("FONTNAME", (0, 0), (-1, 1), "Helvetica-Bold"),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
+    ]))
+    story.append(res_tab)
+    story.append(Spacer(1, 12))
 
-    return pdf.output(dest="S").encode("latin-1")
+    story.append(Paragraph("📊 Datos experimentales", styles["Heading2"]))
+    df_round = edited_df.copy().round(2)
+    tabla_datos = [df_round.columns.tolist()] + df_round.values.tolist()
+    t = Table(tabla_datos, hAlign="CENTER")
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.black),
+    ]))
+    story.append(t)
+    story.append(Spacer(1, 12))
 
+    story.append(Paragraph("📈 Gráfico Madurez vs Resistencia", styles["Heading2"]))
+    story.append(Image(img_buf, width=430, height=270))
 
-# -------------------------------
-# Interfaz Streamlit
-# -------------------------------
-st.set_page_config(page_title="Calibración ASTM C1074", layout="centered")
+    # Marca IoT Provoleta® abajo a la derecha
+    story.append(Spacer(1, 30))
+    story.append(Paragraph("<para align='right'>IoT Provoleta®</para>", styles["Normal"]))
 
-st.title("Calibración Norma ASTM C1074")
+    doc.build(story)
+    pdf_buf.seek(0)
+    return pdf_buf.getvalue()
 
-# Subtítulo personalizable
-titulo = st.text_input("Ingrese título del informe:", "")
+# ========================
+# CÁLCULOS
+# ========================
+if not edited_data.empty:
+    edited_data = edited_data[edited_data["Madurez (°C·h)"] > 0].copy()
+    edited_data["Log10(Madurez)"] = np.log10(edited_data["Madurez (°C·h)"])
 
-# Subir datos
-st.write("Cargue sus datos de madurez (°C·h) y resistencia (MPa):")
-file = st.file_uploader("Subir CSV con columnas: Madurez, Resistencia", type=["csv"])
+    if len(edited_data) < 2:
+        st.info("Cargá al menos dos puntos válidos para ajustar la regresión.")
+        st.stop()
 
-if file:
-    df = pd.read_csv(file)
+    X = edited_data["Log10(Madurez)"].values
+    Y = edited_data["Resistencia (MPa)"].values
 
-    if "Madurez" not in df.columns or "Resistencia" not in df.columns:
-        st.error("El archivo debe contener las columnas: Madurez, Resistencia")
-    else:
-        # Calcular log10(Madurez)
-        df["logMadurez"] = np.log10(df["Madurez"])
+    a, b = np.polyfit(X, Y, 1)
+    Y_pred = a * X + b
 
-        # Ajuste lineal
-        X = df[["logMadurez"]].values
-        y = df["Resistencia"].values
-        model = LinearRegression().fit(X, y)
+    ss_res = np.sum((Y - Y_pred) ** 2)
+    ss_tot = np.sum((Y - np.mean(Y)) ** 2)
+    r2 = float(1 - (ss_res / ss_tot)) if ss_tot > 0 else 0.0
 
-        a = model.intercept_
-        b = model.coef_[0]
-        r2 = model.score(X, y)
+    st.markdown("### 📌 Resultados")
+    st.markdown(f"<span style='color:green; font-weight:bold'>Pendiente (a): {a:.2f}</span>", unsafe_allow_html=True)
+    st.markdown(f"<span style='color:green; font-weight:bold'>Ordenada al origen (b): {b:.2f}</span>", unsafe_allow_html=True)
+    st.markdown(f"**R²:** {r2:.2f}")
 
-        # Mostrar resultados
-        st.subheader("Resultados de la regresión")
-        st.write(f"**Ordenada al origen (a):** {a:.3f}")
-        st.write(f"**Pendiente (b):** {b:.3f}")
-        st.write(f"Coeficiente de determinación (R²): {r2:.3f}")
+    # --- Gráfico interactivo Plotly ---
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=edited_data["Madurez (°C·h)"], y=edited_data["Resistencia (MPa)"],
+        mode="markers", name="Datos experimentales",
+        marker=dict(size=8, color="blue")
+    ))
+    x_fit_plot = np.linspace(float(edited_data["Madurez (°C·h)"].min()), float(edited_data["Madurez (°C·h)"].max()), 200)
+    y_fit_plot = a * np.log10(x_fit_plot) + b
+    fig.add_trace(go.Scatter(
+        x=x_fit_plot, y=y_fit_plot, mode="lines", name="Curva estimada",
+        line=dict(color="red")
+    ))
+    fig.update_layout(
+        xaxis_title="Madurez (°C·h)",
+        yaxis_title="Resistencia a compresión (MPa)",
+        hovermode="x unified"
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
-        # Gráfico
-        fig = px.scatter(
-            df,
-            x="Madurez",
-            y="Resistencia",
-            title="Curva de Madurez (ASTM C1074)",
-            labels={"Madurez": "Madurez (°C·h)", "Resistencia": "Resistencia (MPa)"}
-        )
-
-        # Línea de regresión
-        x_vals = np.linspace(df["Madurez"].min(), df["Madurez"].max(), 100)
-        y_vals = a + b * np.log10(x_vals)
-        fig.add_scatter(x=x_vals, y=y_vals, mode="lines", name="Ajuste")
-
-        st.plotly_chart(fig, use_container_width=True)
-
-        # Exportar PDF
-        pdf_bytes = generar_pdf(df, a, b, r2, titulo)
-        st.download_button(
-            "⬇️ Descargar informe PDF",
-            data=pdf_bytes,
-            file_name="calibracion_astm.pdf",
-            mime="application/pdf",
-        )
+    # --- PDF ---
+    pdf_bytes = generar_pdf(edited_data.copy(), a, b, r2)
+    st.download_button(
+        label="📄 Descargar informe en PDF",
+        data=pdf_bytes,
+        file_name="informe_calibracion.pdf",
+        mime="application/pdf"
+    )
