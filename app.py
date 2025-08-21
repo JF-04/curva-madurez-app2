@@ -13,7 +13,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-st.title("Calibración estimada hormigones - IoT Provoleta")
+st.title("Calibración hormigones ASTM C1074 - IoT Provoleta")
 
 # Título personalizado para informe/hoja
 custom_title = st.text_input("📌 Título del informe/archivo", "Informe de calibración")
