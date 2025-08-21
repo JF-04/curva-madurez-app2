@@ -125,8 +125,8 @@ if not edited_data.empty:
     r2 = float(1 - (ss_res / ss_tot)) if ss_tot > 0 else 0.0
 
     st.markdown("### 📌 Resultados")
-    st.markdown(f"<span style='color:green; font-weight:bold'>Pendiente (a): {a:.2f}</span>", unsafe_allow_html=True)
     st.markdown(f"<span style='color:green; font-weight:bold'>Ordenada al origen (b): {b:.2f}</span>", unsafe_allow_html=True)
+    st.markdown(f"<span style='color:green; font-weight:bold'>Pendiente (a): {a:.2f}</span>", unsafe_allow_html=True)
     st.markdown(f"**R²:** {r2:.2f}")
 
     # --- Gráfico interactivo Plotly ---
