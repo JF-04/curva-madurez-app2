@@ -130,7 +130,7 @@ if not edited_data.empty:
     st.markdown(f"**R²:** {r2:.2f}")
 
     # --- Gráfico interactivo Plotly ---
-    fig = go.Figure()
+fig = go.Figure()
     fig.add_trace(go.Scatter(
     x=edited_data["Madurez (°C·h)"], y=edited_data["Resistencia (MPa)"],
     mode="markers", name="Datos experimentales",
