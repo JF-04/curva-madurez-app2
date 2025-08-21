@@ -63,21 +63,6 @@ def generar_pdf(edited_df: pd.DataFrame, a: float, b: float, r2: float) -> bytes
     story.append(Paragraph(custom_title, styles["Title"]))
     story.append(Spacer(1, 8))
 
-    story.append(Paragraph("📌 Resultados de la regresión", styles["Heading2"]))
-    res_tab = Table([
-        ["Ordenada al origen (b)", f"{b:.2f}"],
-        ["Pendiente (a)", f"{a:.2f}"],
-        ["R²", f"{r2:.2f}"],
-    ], hAlign="LEFT")
-    res_tab.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 1), colors.lightgrey),
-        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-        ("FONTNAME", (0, 0), (-1, 1), "Helvetica-Bold"),
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
-    ]))
-    story.append(res_tab)
-    story.append(Spacer(1, 12))
-
     story.append(Paragraph("📊 Datos experimentales", styles["Heading2"]))
     df_round = edited_df.copy().round(2)
     tabla_datos = [df_round.columns.tolist()] + df_round.values.tolist()
@@ -90,6 +75,21 @@ def generar_pdf(edited_df: pd.DataFrame, a: float, b: float, r2: float) -> bytes
         ("GRID", (0, 0), (-1, -1), 0.25, colors.black),
     ]))
     story.append(t)
+    story.append(Spacer(1, 12))
+
+    story.append(Paragraph("📌 Resultados de la regresión", styles["Heading2"]))
+    res_tab = Table([
+        ["Ordenada al origen (b)", f"{b:.2f}"],
+        ["Pendiente (a)", f"{a:.2f}"],
+        ["R²", f"{r2:.2f}"],
+    ], hAlign="CENTER")
+    res_tab.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 1), colors.lightgrey),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("FONTNAME", (0, 0), (-1, 1), "Helvetica-Bold"),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
+    ]))
+    story.append(res_tab)
     story.append(Spacer(1, 12))
 
     story.append(Paragraph("📈 Gráfico Madurez vs Resistencia", styles["Heading2"]))
