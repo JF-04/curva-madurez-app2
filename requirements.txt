@@ -1,5 +1,7 @@
 streamlit
 pandas
+numpy
 plotly
-statsmodels
-fpdf2
+fpdf
+scikit-learn
+

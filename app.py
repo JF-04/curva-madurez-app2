@@ -1,84 +1,117 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import plotly.express as px
-import statsmodels.api as sm
+from io import BytesIO
 from fpdf import FPDF
-import base64
+from sklearn.linear_model import LinearRegression
 
-st.set_page_config(page_title="Calibración ASTM C1074", layout="wide")
+# -------------------------------
+# Función para generar el PDF
+# -------------------------------
+def generar_pdf(df: pd.DataFrame, a: float, b: float, r2: float, titulo: str) -> bytes:
+    pdf = FPDF()
+    pdf.add_page()
 
-st.title("📈 Calibración norma ASTM C1074")
-st.caption("IoT Provoleta")
+    # Encabezado
+    pdf.set_font("Arial", "B", 12)
+    pdf.cell(0, 10, "IoT Provoleta®", ln=True, align="R")
 
-# ===============================
-# 1. Carga de datos
-# ===============================
-st.subheader("Carga de datos de ensayo")
-st.markdown("Ingrese la **Madurez (°C·h)** y la **Resistencia (MPa)**:")
+    # Título
+    pdf.set_font("Arial", "B", 14)
+    pdf.cell(0, 10, "Calibración Norma ASTM C1074", ln=True, align="C")
+    pdf.ln(10)
 
-# Ejemplo de tabla editable
-data = {
-    "Madurez (°C·h)": [1000, 2000, 3000, 4000],
-    "Resistencia (MPa)": [10, 18, 25, 30]
-}
-df = pd.DataFrame(data)
+    # Subtítulo personalizado
+    pdf.set_font("Arial", "B", 12)
+    pdf.cell(0, 10, titulo, ln=True, align="C")
+    pdf.ln(10)
 
-edited_df = st.data_editor(df, num_rows="dynamic")
+    # Resultados de la regresión
+    pdf.set_font("Arial", "", 12)
+    pdf.cell(0, 10, f"Ordenada al origen (a): ", ln=False)
+    pdf.set_font("Arial", "B", 12)
+    pdf.cell(0, 10, f"{a:.3f}", ln=True)
 
-# ===============================
-# 2. Ajuste de regresión lineal
-# ===============================
-if len(edited_df) >= 2:
-    X = edited_df["Madurez (°C·h)"]
-    y = edited_df["Resistencia (MPa)"]
+    pdf.set_font("Arial", "", 12)
+    pdf.cell(0, 10, f"Pendiente (b): ", ln=False)
+    pdf.set_font("Arial", "B", 12)
+    pdf.cell(0, 10, f"{b:.3f}", ln=True)
 
-    X_const = sm.add_constant(X)
-    model = sm.OLS(y, X_const).fit()
+    pdf.set_font("Arial", "", 12)
+    pdf.cell(0, 10, f"Coeficiente de determinación R²: {r2:.3f}", ln=True)
 
-    a, b = model.params  # a = intercepto, b = pendiente
-    r2 = model.rsquared
+    # Exportar tabla
+    pdf.ln(10)
+    pdf.set_font("Arial", "B", 12)
+    pdf.cell(0, 10, "Datos utilizados:", ln=True)
 
-    st.success(f"📊 Ecuación: **Resistencia = {a:.2f} + {b:.4f} × Madurez**")
-    st.write(f"Coeficiente de determinación R² = **{r2:.4f}**")
+    pdf.set_font("Arial", "", 10)
+    for _, row in df.iterrows():
+        pdf.cell(0, 8, f"Madurez: {row['Madurez']}  |  Resistencia: {row['Resistencia']}", ln=True)
 
-    # ===============================
-    # 3. Gráfico
-    # ===============================
-    fig = px.scatter(
-        edited_df, x="Madurez (°C·h)", y="Resistencia (MPa)",
-        trendline="ols", title="Curva de Calibración ASTM C1074"
-    )
-    st.plotly_chart(fig, use_container_width=True)
+    return pdf.output(dest="S").encode("latin-1")
 
-    # ===============================
-    # 4. Exportar a PDF
-    # ===============================
-    def generar_pdf(df, a, b, r2):
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_font("Arial", "B", 14)
-        pdf.cell(200, 10, "IoT Provoleta", ln=True, align="R")
-        pdf.cell(200, 10, "Calibración norma ASTM C1074", ln=True, align="C")
 
-        pdf.set_font("Arial", "", 12)
-        pdf.ln(10)
-        pdf.multi_cell(0, 10, f"Ecuación de correlación:\n\nResistencia = {a:.2f} + {b:.4f} × Madurez\n\nR² = {r2:.4f}")
+# -------------------------------
+# Interfaz Streamlit
+# -------------------------------
+st.set_page_config(page_title="Calibración ASTM C1074", layout="centered")
 
-        pdf.ln(10)
-        pdf.set_font("Arial", "B", 12)
-        pdf.cell(0, 10, "Datos utilizados:", ln=True)
+st.title("Calibración Norma ASTM C1074")
 
-        pdf.set_font("Arial", "", 11)
-        for _, row in df.iterrows():
-            pdf.cell(0, 8, f"Madurez: {row['Madurez (°C·h)']}, Resistencia: {row['Resistencia (MPa)']}", ln=True)
+# Subtítulo personalizable
+titulo = st.text_input("Ingrese título del informe:", "")
 
-        return pdf.output(dest="S").encode("latin1")
+# Subir datos
+st.write("Cargue sus datos de madurez (°C·h) y resistencia (MPa):")
+file = st.file_uploader("Subir CSV con columnas: Madurez, Resistencia", type=["csv"])
 
-    if st.button("📄 Generar PDF"):
-        pdf_bytes = generar_pdf(edited_df, a, b, r2)
-        b64 = base64.b64encode(pdf_bytes).decode()
-        href = f'<a href="data:application/pdf;base64,{b64}" download="calibracion_astm.pdf">⬇️ Descargar PDF</a>'
-        st.markdown(href, unsafe_allow_html=True)
+if file:
+    df = pd.read_csv(file)
 
-else:
-    st.warning("⚠️ Cargue al menos dos puntos de datos para generar la curva.")
+    if "Madurez" not in df.columns or "Resistencia" not in df.columns:
+        st.error("El archivo debe contener las columnas: Madurez, Resistencia")
+    else:
+        # Calcular log10(Madurez)
+        df["logMadurez"] = np.log10(df["Madurez"])
+
+        # Ajuste lineal
+        X = df[["logMadurez"]].values
+        y = df["Resistencia"].values
+        model = LinearRegression().fit(X, y)
+
+        a = model.intercept_
+        b = model.coef_[0]
+        r2 = model.score(X, y)
+
+        # Mostrar resultados
+        st.subheader("Resultados de la regresión")
+        st.write(f"**Ordenada al origen (a):** {a:.3f}")
+        st.write(f"**Pendiente (b):** {b:.3f}")
+        st.write(f"Coeficiente de determinación (R²): {r2:.3f}")
+
+        # Gráfico
+        fig = px.scatter(
+            df,
+            x="Madurez",
+            y="Resistencia",
+            title="Curva de Madurez (ASTM C1074)",
+            labels={"Madurez": "Madurez (°C·h)", "Resistencia": "Resistencia (MPa)"}
+        )
+
+        # Línea de regresión
+        x_vals = np.linspace(df["Madurez"].min(), df["Madurez"].max(), 100)
+        y_vals = a + b * np.log10(x_vals)
+        fig.add_scatter(x=x_vals, y=y_vals, mode="lines", name="Ajuste")
+
+        st.plotly_chart(fig, use_container_width=True)
+
+        # Exportar PDF
+        pdf_bytes = generar_pdf(df, a, b, r2, titulo)
+        st.download_button(
+            "⬇️ Descargar informe PDF",
+            data=pdf_bytes,
+            file_name="calibracion_astm.pdf",
+            mime="application/pdf",
+        )
