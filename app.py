@@ -65,8 +65,8 @@ def generar_pdf(edited_df: pd.DataFrame, a: float, b: float, r2: float) -> bytes
 
     story.append(Paragraph("📌 Resultados de la regresión", styles["Heading2"]))
     res_tab = Table([
-        ["Pendiente (a)", f"{a:.2f}"],
         ["Ordenada al origen (b)", f"{b:.2f}"],
+        ["Pendiente (a)", f"{a:.2f}"],
         ["R²", f"{r2:.2f}"],
     ], hAlign="LEFT")
     res_tab.setStyle(TableStyle([
