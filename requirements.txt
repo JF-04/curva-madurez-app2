@@ -5,4 +5,5 @@ plotly
 fpdf
 scikit-learn
 reportlab
+matplotlib
 
