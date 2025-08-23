@@ -7,15 +7,67 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
-
-# --- Para PDF con Matplotlib ---
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-st.title("Calibración hormigones ASTMC1074. IoT Provoleta®")
+# --- NUEVO: librería para base de datos ---
+import sqlite3
+from datetime import datetime
 
-# Título personalizado para informe/hoja
+# =====================================
+# INICIALIZAR BASE DE DATOS LOCAL
+# =====================================
+def init_db():
+    conn = sqlite3.connect("resultados.db")
+    c = conn.cursor()
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS resultados (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fecha TEXT,
+            titulo TEXT,
+            a REAL,
+            b REAL,
+            r2 REAL
+        )
+    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS datos_experimentales (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            resultado_id INTEGER,
+            madurez REAL,
+            resistencia REAL,
+            FOREIGN KEY(resultado_id) REFERENCES resultados(id)
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+def guardar_resultados(titulo, a, b, r2, df):
+    conn = sqlite3.connect("resultados.db")
+    c = conn.cursor()
+
+    # Guardar cabecera de resultados
+    fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    c.execute("INSERT INTO resultados (fecha, titulo, a, b, r2) VALUES (?, ?, ?, ?, ?)",
+              (fecha, titulo, float(a), float(b), float(r2)))
+    resultado_id = c.lastrowid
+
+    # Guardar tabla de datos
+    for _, row in df.iterrows():
+        c.execute("INSERT INTO datos_experimentales (resultado_id, madurez, resistencia) VALUES (?, ?, ?)",
+                  (resultado_id, float(row["Madurez (°C·h)"]), float(row["Resistencia (MPa)"])))
+    
+    conn.commit()
+    conn.close()
+
+# Inicializar DB
+init_db()
+
+# =====================================
+# STREAMLIT APP
+# =====================================
+st.title("Calibración hormigones ASTMC1074. IoT Provoleta®")
 custom_title = st.text_input("📌 Título del informe/archivo", "Informe de calibración")
 
 st.markdown("""
@@ -37,8 +89,6 @@ edited_data = st.data_editor(data, num_rows="dynamic")
 # FUNCIÓN PDF
 # ========================
 def generar_pdf(edited_df: pd.DataFrame, a: float, b: float, r2: float) -> bytes:
-    """Genera un PDF con resultados + tabla + gráfico renderizado."""
-    # --- Gráfico Matplotlib ---
     fig, ax = plt.subplots(figsize=(6.0, 3.8))
     ax.scatter(edited_df["Madurez (°C·h)"], edited_df["Resistencia (MPa)"], label="Datos experimentales", color="blue")
     x_fit = np.linspace(float(edited_df["Madurez (°C·h)"].min()), float(edited_df["Madurez (°C·h)"].max()), 200)
@@ -53,13 +103,11 @@ def generar_pdf(edited_df: pd.DataFrame, a: float, b: float, r2: float) -> bytes
     plt.close(fig)
     img_buf.seek(0)
 
-    # --- Construir PDF ---
     pdf_buf = BytesIO()
     doc = SimpleDocTemplate(pdf_buf, pagesize=A4)
     styles = getSampleStyleSheet()
     story = []
 
-    # Título del informe (desde la app)
     story.append(Paragraph(custom_title, styles["Title"]))
     story.append(Spacer(1, 8))
 
@@ -95,7 +143,6 @@ def generar_pdf(edited_df: pd.DataFrame, a: float, b: float, r2: float) -> bytes
     story.append(Paragraph("📈 Gráfico Madurez vs Resistencia", styles["Heading2"]))
     story.append(Image(img_buf, width=430, height=270))
 
-    # Marca IoT Provoleta® abajo a la derecha
     story.append(Spacer(1, 30))
     story.append(Paragraph("<para align='right'>IoT Provoleta®</para>", styles["Normal"]))
 
@@ -129,46 +176,39 @@ if not edited_data.empty:
     st.markdown(f"<span style='color:green; font-weight:bold'>Pendiente (a): {a:.2f}</span>", unsafe_allow_html=True)
     st.markdown(f"**R²:** {r2:.2f}")
 
-    # --- Gráfico interactivo Plotly ---
-if not edited_data.empty:
+    # Gráfico interactivo
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=edited_data["Madurez (°C·h)"], y=edited_data["Resistencia (MPa)"],
         mode="markers", name="Datos experimentales",
         marker=dict(size=8, color="blue")
     ))
-
     x_fit_plot = np.linspace(
         float(edited_data["Madurez (°C·h)"].min()),
         float(edited_data["Madurez (°C·h)"].max()), 200
     )
     y_fit_plot = a * np.log10(x_fit_plot) + b
-
     fig.add_trace(go.Scatter(
         x=x_fit_plot, y=y_fit_plot, mode="lines", name="Curva estimada",
         line=dict(color="red")
     ))
-
-
     fig.update_layout(
         xaxis_title="Madurez (°C·h)",
         yaxis_title="Resistencia a compresión (MPa)",
         hovermode="x unified",
-        legend=dict(
-            orientation="h",
-            yanchor="bottom", y=-0.3,
-            xanchor="center", x=0.5
-        )
+        legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5)
     )
-
     st.plotly_chart(fig, use_container_width=True)
 
-
-    # --- PDF ---
+    # --- PDF + GUARDAR EN BASE ---
     pdf_bytes = generar_pdf(edited_data.copy(), a, b, r2)
-    st.download_button(
+
+    # Botón: al descargar, también guarda en la base
+    if st.download_button(
         label="📄 Descargar informe en PDF",
         data=pdf_bytes,
         file_name="informe_calibracion.pdf",
         mime="application/pdf"
-    )
+    ):
+        guardar_resultados(custom_title, a, b, r2, edited_data.copy())
+        st.success("✅ Datos guardados en la base de datos local.")
